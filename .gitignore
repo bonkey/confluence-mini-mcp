@@ -1,0 +1,6 @@
+confluence-mini-mcp.toml
+__pycache__/
+*.pyc
+dist/
+*.egg-info/
+.venv/
