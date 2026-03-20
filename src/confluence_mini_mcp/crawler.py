@@ -262,9 +262,7 @@ def fetch_external_url(url: str, gh_token: str = "") -> PageData | None:
             now = datetime.now(timezone.utc).isoformat()
             parsed = urlparse(str(resp.url))  # use final URL after redirects
             title = (
-                _extract_html_title(resp.text)
-                if "html" in content_type
-                else ""
+                _extract_html_title(resp.text) if "html" in content_type else ""
             ) or parsed.netloc + parsed.path
 
             return PageData(
@@ -396,9 +394,7 @@ class SubtreeCrawler:
                 # (include, excerpt-include, children)
                 macro_refs = extract_macro_page_refs(body_html)
                 for title, space_key in macro_refs:
-                    resolved_id = self._client.find_page_by_title(
-                        title, space_key
-                    )
+                    resolved_id = self._client.find_page_by_title(title, space_key)
                     if resolved_id and resolved_id not in visited_ids:
                         queue.append(
                             _CrawlItem(
@@ -410,7 +406,7 @@ class SubtreeCrawler:
                         )
                     elif not resolved_id:
                         print(
-                            f"[WARN] Macro references page \"{title}\""
+                            f'[WARN] Macro references page "{title}"'
                             f"{' in ' + space_key if space_key else ''}"
                             " but it was not found",
                             file=sys.stderr,
