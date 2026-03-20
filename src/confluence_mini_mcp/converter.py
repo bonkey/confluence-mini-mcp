@@ -9,7 +9,7 @@ from markdownify import markdownify, MarkdownConverter
 class ConfluenceConverter(MarkdownConverter):
     """Custom converter that handles Confluence-specific macros."""
 
-    def convert_ac_structured_macro(self, el, text, convert_as_inline):
+    def convert_ac_structured_macro(self, el, text, **kwargs):
         """Convert Confluence code blocks to fenced Markdown."""
         macro_name = el.get("ac:name", "")
         if macro_name == "code":
@@ -24,7 +24,7 @@ class ConfluenceConverter(MarkdownConverter):
         if macro_name in ("info", "note", "warning", "tip"):
             label = macro_name.upper()
             body = el.find("ac:rich-text-body")
-            inner = self.convert(body) if body else text
+            inner = self.convert(str(body)) if body else text
             lines = inner.strip().splitlines()
             quoted = "\n".join(f"> {line}" for line in lines)
             return f"\n> **{label}:**\n{quoted}\n"
@@ -53,8 +53,7 @@ def confluence_to_markdown(html: str, base_url: str = "") -> str:
             html,
         )
 
-    result = markdownify(
-        html,
+    result = ConfluenceConverter(
         heading_style="ATX",
         bullets="-",
         strip=[
@@ -64,8 +63,7 @@ def confluence_to_markdown(html: str, base_url: str = "") -> str:
             "ac:layout-section",
             "ac:layout-cell",
         ],
-        convert=["ac:structured-macro"],
-    )
+    ).convert(html)
 
     # Clean up excessive blank lines
     result = re.sub(r"\n{3,}", "\n\n", result)

@@ -14,6 +14,10 @@ test:
     uv run python tests/test_link_extraction.py
     CONFLUENCE_DRY_RUN=true uv run python tests/test_tools.py
 
+# Validate config, connectivity, and cache health
+doctor:
+    uv run python -m confluence_mini_mcp doctor
+
 # Format + test
 check: fmt test
 
