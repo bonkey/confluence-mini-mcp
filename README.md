@@ -9,7 +9,7 @@ Lightweight MCP server that crawls Confluence subtrees and serves cached Markdow
   "mcpServers": {
     "confluence-docs": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/bonkey/confluence-mcp", "confluence-mini-mcp"],
+      "args": ["--from", "git+https://github.com/bonkey/confluence-mini-mcp", "confluence-mini-mcp"],
       "env": {
         "CONFLUENCE_BASE_URL": "https://company.atlassian.net/wiki",
         "CONFLUENCE_EMAIL": "you@company.com",
@@ -21,14 +21,14 @@ Lightweight MCP server that crawls Confluence subtrees and serves cached Markdow
 }
 ```
 
-Pin to a tag: `"--from", "git+https://github.com/bonkey/confluence-mcp@v0.1.0"`
+Pin to a tag: `"--from", "git+https://github.com/bonkey/confluence-mini-mcp@v0.1.1"`
 
 ## Nanobot config
 
 ```toml
 [mcp.confluence]
 command = "uvx"
-args = ["--from", "git+https://github.com/bonkey/confluence-mcp", "confluence-mini-mcp"]
+args = ["--from", "git+https://github.com/bonkey/confluence-mini-mcp", "confluence-mini-mcp"]
 env = { CONFLUENCE_BASE_URL = "https://company.atlassian.net/wiki", CONFLUENCE_EMAIL = "you@company.com", CONFLUENCE_API_TOKEN = "...", CONFLUENCE_ROOT_PAGE_IDS = "123456,789012" }
 ```
 

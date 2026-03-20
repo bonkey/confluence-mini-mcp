@@ -3,6 +3,7 @@
 from confluence_mini_mcp.crawler import (
     extract_confluence_page_ids,
     extract_external_urls,
+    extract_macro_page_refs,
 )
 
 
@@ -39,8 +40,42 @@ def test_no_links():
     print("test_no_links passed")
 
 
+def test_extract_macro_page_refs():
+    html = """
+    <ac:structured-macro ac:name="include">
+      <ac:parameter ac:name="">
+        <ac:link><ri:page ri:content-title="API Design" ri:space-key="ENG" /></ac:link>
+      </ac:parameter>
+    </ac:structured-macro>
+    <ac:structured-macro ac:name="excerpt-include">
+      <ac:parameter ac:name="">
+        <ac:link><ri:page ri:content-title="Status Page" /></ac:link>
+      </ac:parameter>
+    </ac:structured-macro>
+    <ac:structured-macro ac:name="children">
+      <ac:parameter ac:name="page">
+        <ac:link><ri:page ri:content-title="Project Hub" ri:space-key="TEAM" /></ac:link>
+      </ac:parameter>
+    </ac:structured-macro>
+    """
+    refs = extract_macro_page_refs(html)
+    assert ("API Design", "ENG") in refs
+    assert ("Status Page", "") in refs
+    assert ("Project Hub", "TEAM") in refs
+    assert len(refs) == 3
+    print("test_extract_macro_page_refs passed")
+
+
+def test_extract_macro_page_refs_empty():
+    html = '<ac:structured-macro ac:name="code"><ac:plain-text-body>x</ac:plain-text-body></ac:structured-macro>'
+    assert extract_macro_page_refs(html) == []
+    print("test_extract_macro_page_refs_empty passed")
+
+
 if __name__ == "__main__":
     test_extract_page_ids()
     test_extract_external_urls()
     test_no_links()
+    test_extract_macro_page_refs()
+    test_extract_macro_page_refs_empty()
     print("All link extraction tests passed")

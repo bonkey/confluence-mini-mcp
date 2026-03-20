@@ -34,6 +34,7 @@ class Config:
     max_depth: int = 10
     max_pages: int = 500
     refresh_interval_minutes: int = 5
+    gh_token: str = ""
     dry_run: bool = False
 
 
@@ -52,6 +53,7 @@ def load_config() -> Config:
     base_url = _get("base_url", "CONFLUENCE_BASE_URL")
     email = _get("email", "CONFLUENCE_EMAIL")
     api_token = _get("api_token", "CONFLUENCE_API_TOKEN")
+    gh_token = _get("gh_token", "GH_TOKEN", "")
     dry_run = _str_to_bool(_get("dry_run", "CONFLUENCE_DRY_RUN", "false"))
 
     # root_page_ids: TOML array or comma-separated env var
@@ -99,6 +101,7 @@ def load_config() -> Config:
         refresh_interval_minutes=int(
             _get("refresh_interval_minutes", "CONFLUENCE_REFRESH_INTERVAL", "5")
         ),
+        gh_token=gh_token,
         dry_run=dry_run,
     )
 

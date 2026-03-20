@@ -84,6 +84,20 @@ class ConfluenceClient:
             params={"body-format": "storage"},
         )
 
+    def find_page_by_title(self, title: str, space_key: str = "") -> str | None:
+        """Resolve a page title to its ID. Returns None if not found."""
+        params: dict = {"title": title, "limit": 1}
+        if space_key:
+            params["space-key"] = space_key
+        try:
+            data = self._get("/api/v2/pages", params=params)
+            results = data.get("results", [])
+            if results:
+                return str(results[0]["id"])
+        except httpx.HTTPStatusError:
+            pass
+        return None
+
     def get_child_pages(self, page_id: str) -> list[dict]:
         """Fetch all direct child pages of a given page."""
         results = []
@@ -125,6 +139,32 @@ def extract_confluence_page_ids(html: str) -> list[str]:
     return list(dict.fromkeys(ids))  # dedupe, preserve order
 
 
+def extract_macro_page_refs(html: str) -> list[tuple[str, str]]:
+    """Extract page references from Confluence macros (include, excerpt-include, children).
+
+    These macros reference pages by title (not ID), wrapped in:
+        <ri:page ri:content-title="Page Title" ri:space-key="SPACE" />
+
+    Returns a list of (title, space_key) tuples. space_key may be empty
+    if the macro references a page in the same space.
+    """
+    refs: list[tuple[str, str]] = []
+
+    # Match ri:page with content-title inside structured macros
+    # These appear in include, excerpt-include, and children macros
+    for m in re.finditer(
+        r'<ri:page[^>]*\bri:content-title="([^"]+)"[^>]*/?>',
+        html,
+    ):
+        title = m.group(1)
+        # Check for space-key in the same tag
+        sk = re.search(r'ri:space-key="([^"]+)"', m.group(0))
+        space_key = sk.group(1) if sk else ""
+        refs.append((title, space_key))
+
+    return list(dict.fromkeys(refs))  # dedupe, preserve order
+
+
 def extract_external_urls(html: str, confluence_base: str) -> list[str]:
     """Extract external HTTP(S) URLs from storage-format HTML."""
     urls: list[str] = []
@@ -144,26 +184,75 @@ def extract_external_urls(html: str, confluence_base: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def fetch_external_url(url: str) -> PageData | None:
-    """Fetch an external URL (follow redirects, 1 level only)."""
+def _is_github_url(url: str) -> bool:
+    """Check if a URL points to GitHub or GitHub raw content."""
+    host = urlparse(url).netloc.lower()
+    return host in ("github.com", "raw.githubusercontent.com") or host.endswith(
+        ".github.com"
+    )
+
+
+def _github_to_raw(url: str) -> str:
+    """Convert github.com blob URLs to raw.githubusercontent.com for clean content.
+
+    e.g. https://github.com/org/repo/blob/main/README.md
+      -> https://raw.githubusercontent.com/org/repo/main/README.md
+    """
+    parsed = urlparse(url)
+    if parsed.netloc.lower() != "github.com":
+        return url
+
+    m = re.match(r"^/([^/]+/[^/]+)/blob/(.+)$", parsed.path)
+    if m:
+        return f"https://raw.githubusercontent.com/{m.group(1)}/{m.group(2)}"
+    return url
+
+
+def fetch_external_url(url: str, gh_token: str = "") -> PageData | None:
+    """Fetch an external URL (follow redirects, 1 level only).
+
+    Args:
+        url: The URL to fetch.
+        gh_token: Optional GitHub token for private repo access.
+    """
+    headers: dict[str, str] = {}
+    fetch_url = url
+
+    if _is_github_url(url) and gh_token:
+        headers["Authorization"] = f"token {gh_token}"
+        fetch_url = _github_to_raw(url)
+
     try:
         with httpx.Client(
-            timeout=15.0, follow_redirects=True, max_redirects=5
+            timeout=15.0, follow_redirects=True, max_redirects=5, headers=headers
         ) as client:
-            resp = client.get(url)
+            resp = client.get(fetch_url)
             resp.raise_for_status()
 
             content_type = resp.headers.get("content-type", "")
-            if "html" not in content_type and "text" not in content_type:
+
+            # Raw GitHub content is served as text/plain for markdown etc.
+            is_raw_gh = "raw.githubusercontent.com" in str(resp.url)
+
+            if (
+                not is_raw_gh
+                and "html" not in content_type
+                and "text" not in content_type
+            ):
                 print(
                     f"[INFO] Skipping non-text URL: {url} ({content_type})",
                     file=sys.stderr,
                 )
                 return None
 
-            from markdownify import markdownify
+            if is_raw_gh and ("text/plain" in content_type):
+                # Already markdown/text — use as-is
+                md = resp.text
+            else:
+                from markdownify import markdownify
 
-            md = markdownify(resp.text, heading_style="ATX", bullets="-")
+                md = markdownify(resp.text, heading_style="ATX", bullets="-")
+
             md = re.sub(r"\n{3,}", "\n\n", md).strip()
 
             # Truncate very large pages
@@ -172,14 +261,18 @@ def fetch_external_url(url: str) -> PageData | None:
 
             now = datetime.now(timezone.utc).isoformat()
             parsed = urlparse(str(resp.url))  # use final URL after redirects
-            title = _extract_html_title(resp.text) or parsed.netloc + parsed.path
+            title = (
+                _extract_html_title(resp.text)
+                if "html" in content_type
+                else ""
+            ) or parsed.netloc + parsed.path
 
             return PageData(
                 id=f"ext:{url}",
                 title=title,
                 space_key="",
                 path=["External"],
-                web_url=str(resp.url),
+                web_url=url,  # keep original URL, not the raw rewrite
                 markdown_content=md,
                 last_modified=now,
                 version_when=now,
@@ -299,6 +392,30 @@ class SubtreeCrawler:
                             )
                         )
 
+                # Resolve pages referenced by title in macros
+                # (include, excerpt-include, children)
+                macro_refs = extract_macro_page_refs(body_html)
+                for title, space_key in macro_refs:
+                    resolved_id = self._client.find_page_by_title(
+                        title, space_key
+                    )
+                    if resolved_id and resolved_id not in visited_ids:
+                        queue.append(
+                            _CrawlItem(
+                                page_id=resolved_id,
+                                depth=child_depth,
+                                path=child_path,
+                                max_depth_override=child_max_depth,
+                            )
+                        )
+                    elif not resolved_id:
+                        print(
+                            f"[WARN] Macro references page \"{title}\""
+                            f"{' in ' + space_key if space_key else ''}"
+                            " but it was not found",
+                            file=sys.stderr,
+                        )
+
             # Fetch external URLs (1 level, no recursion)
             if directives.follow_external:
                 ext_urls = extract_external_urls(body_html, self._config.base_url)
@@ -308,7 +425,7 @@ class SubtreeCrawler:
                         and len(all_pages) < self._config.max_pages
                     ):
                         visited_urls.add(url)
-                        ext_page = fetch_external_url(url)
+                        ext_page = fetch_external_url(url, self._config.gh_token)
                         if ext_page:
                             all_pages.append(ext_page)
 
