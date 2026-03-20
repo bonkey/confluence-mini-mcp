@@ -67,10 +67,16 @@ mcp = FastMCP("confluence-mini-mcp", lifespan=app_lifespan)
 
 @mcp.tool
 def search_pages(query: str, limit: int = 10, ctx: Context = None) -> list[dict]:
-    """Full-text search across all cached Confluence pages.
+    """Full-text search across all cached Confluence pages and external links.
+
+    Returns short snippets only. IMPORTANT: Always call get_page on
+    relevant results to read the full content before answering questions.
+    The snippet is just a preview — the full page often contains the
+    information you need.
 
     Args:
-        query: Space-separated keywords to search for.
+        query: Space-separated keywords to search for. Try single
+            key terms first; the search supports prefix matching.
         limit: Max results to return (default 10, max 20).
     """
     cache: PageCache = ctx.lifespan_context["cache"]
@@ -80,10 +86,13 @@ def search_pages(query: str, limit: int = 10, ctx: Context = None) -> list[dict]
 
 @mcp.tool
 def get_page(page_id: str, ctx: Context = None) -> dict:
-    """Retrieve the full Markdown content of a specific Confluence page by ID.
+    """Retrieve the full Markdown content of a specific page by ID.
+
+    Use this after search_pages to read the complete content of a result.
+    Pages may be Confluence pages or crawled external websites.
 
     Args:
-        page_id: The Confluence page ID.
+        page_id: The page ID from search_pages or list_pages results.
     """
     cache: PageCache = ctx.lifespan_context["cache"]
     page = cache.get_page(page_id)

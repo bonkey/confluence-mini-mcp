@@ -309,18 +309,10 @@ class PageCache:
         results = []
         for row in rows:
             d = self._row_to_dict(row)
-            snippet = self._make_snippet(
-                d.get("markdown_content", ""), terms.lower().split()
-            )
+            content = d.get("markdown_content", "")
+            snippet = self._make_snippet(content, terms.lower().split())
             results.append(
-                {
-                    "id": d["id"],
-                    "title": d["title"],
-                    "path": d.get("path", []),
-                    "webUrl": d.get("web_url", ""),
-                    "snippet": snippet,
-                    "score": round(-row["rank"], 2),  # bm25 returns negative
-                }
+                self._search_result(d, snippet, round(-row["rank"], 2), content)
             )
         return results
 
@@ -335,20 +327,24 @@ class PageCache:
         results = []
         for row in rows:
             d = self._row_to_dict(row)
-            snippet = self._make_snippet(
-                d.get("markdown_content", ""), query.lower().split()
-            )
-            results.append(
-                {
-                    "id": d["id"],
-                    "title": d["title"],
-                    "path": d.get("path", []),
-                    "webUrl": d.get("web_url", ""),
-                    "snippet": snippet,
-                    "score": 1.0,
-                }
-            )
+            content = d.get("markdown_content", "")
+            snippet = self._make_snippet(content, query.lower().split())
+            results.append(self._search_result(d, snippet, 1.0, content))
         return results
+
+    @staticmethod
+    def _search_result(d: dict, snippet: str, score: float, content: str) -> dict:
+        return {
+            "id": d["id"],
+            "title": d["title"],
+            "path": d.get("path", []),
+            "webUrl": d.get("web_url", ""),
+            "sourceType": d.get("source_type", "confluence"),
+            "contentLength": len(content),
+            "snippet": snippet,
+            "score": score,
+            "hint": f"Call get_page(\"{d['id']}\") to read full content",
+        }
 
     @staticmethod
     def _row_to_dict(row: sqlite3.Row) -> dict:
@@ -362,7 +358,7 @@ class PageCache:
         return d
 
     @staticmethod
-    def _make_snippet(content: str, terms: list[str], max_len: int = 300) -> str:
+    def _make_snippet(content: str, terms: list[str], max_len: int = 500) -> str:
         """Extract a snippet around the first matched term."""
         content_lower = content.lower()
         best_pos = len(content)
