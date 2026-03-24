@@ -20,6 +20,9 @@ _CONFIG_SEARCH_PATHS = [
     Path.home() / ".config" / "confluence-mini-mcp" / _CONFIG_FILENAME,
 ]
 
+# Populated by __main__ before load_config() is called
+_cli_args = None
+
 
 @dataclass
 class Config:
@@ -48,17 +51,29 @@ def load_config() -> Config:
             break
 
     def _get(key: str, env_key: str, default=None):
+        # CLI args (highest priority) → env vars → TOML file → default
+        if _cli_args is not None:
+            cli_val = getattr(_cli_args, key, None)
+            if cli_val is not None:
+                return cli_val
         return os.environ.get(env_key) or file_values.get(key) or default
 
     base_url = _get("base_url", "CONFLUENCE_BASE_URL")
     email = _get("email", "CONFLUENCE_EMAIL")
     api_token = _get("api_token", "CONFLUENCE_API_TOKEN")
     gh_token = _get("gh_token", "GH_TOKEN", "")
-    dry_run = _str_to_bool(_get("dry_run", "CONFLUENCE_DRY_RUN", "false"))
+    # dry_run: CLI flag is a bool, env/file are strings
+    cli_dry_run = getattr(_cli_args, "dry_run", False) if _cli_args else False
+    dry_run = cli_dry_run or _str_to_bool(
+        os.environ.get("CONFLUENCE_DRY_RUN") or str(file_values.get("dry_run", "false"))
+    )
 
-    # root_page_ids: TOML array or comma-separated env var
-    root_page_ids_raw = os.environ.get("CONFLUENCE_ROOT_PAGE_IDS") or file_values.get(
-        "root_page_ids"
+    # root_page_ids: CLI arg or comma-separated env var or TOML array
+    cli_root = getattr(_cli_args, "root_page_ids", None) if _cli_args else None
+    root_page_ids_raw = (
+        cli_root
+        or os.environ.get("CONFLUENCE_ROOT_PAGE_IDS")
+        or file_values.get("root_page_ids")
     )
     if isinstance(root_page_ids_raw, str):
         root_page_ids = [s.strip() for s in root_page_ids_raw.split(",") if s.strip()]
@@ -70,13 +85,13 @@ def load_config() -> Config:
     if not dry_run:
         missing = []
         if not base_url:
-            missing.append("base_url / CONFLUENCE_BASE_URL")
+            missing.append("--base-url / CONFLUENCE_BASE_URL")
         if not email:
-            missing.append("email / CONFLUENCE_EMAIL")
+            missing.append("--email / CONFLUENCE_EMAIL")
         if not api_token:
-            missing.append("api_token / CONFLUENCE_API_TOKEN")
+            missing.append("--api-token / CONFLUENCE_API_TOKEN")
         if not root_page_ids:
-            missing.append("root_page_ids / CONFLUENCE_ROOT_PAGE_IDS")
+            missing.append("--root-page-ids / CONFLUENCE_ROOT_PAGE_IDS")
         if missing:
             print(
                 f"ERROR: Missing required config: {', '.join(missing)}", file=sys.stderr
